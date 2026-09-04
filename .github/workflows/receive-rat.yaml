@@ -1,0 +1,19 @@
+name: Step 2- Receive Application Trigger
+
+on:
+  repository_dispatch:
+    types:
+      - application_push
+
+jobs:
+  receive-trigger:
+    name: Verify Cross-Repo Communication
+    runs-on: ubuntu-lates
+
+    steps:
+      - name: Display Received Application Information
+        run: |
+          echo "SecOps Repo received Appliaction"
+          echo "Application Repositoty: ${{ github.event.client_payload.repositoty }}"
+          echo "Application Branch: ${{ github.event.client_payload.branch }}"
+          echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha}}"
