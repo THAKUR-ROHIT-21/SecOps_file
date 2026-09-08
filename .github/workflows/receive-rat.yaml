@@ -8,17 +8,17 @@ on:
 jobs:
   receive-trigger:
     name: Verify Cross-Repo Communication
-    runs-on: ubuntu-lates
+    runs-on: ubuntu-latest
 
     steps:
       - name: Display Received Application Information
         run: |
           echo "SecOps Repo received Appliaction"
-          echo "Application Repositoty: ${{ github.event.client_payload.repositoty }}"
+          echo "Application Repositoty: ${{ github.event.client_payload.repository }}"
           echo "Application Branch: ${{ github.event.client_payload.branch }}"
           echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha}}"
 
-          
+
       - name: Step 4 - Scan for Application Secrets
         run: |
           docker run --rm \
@@ -29,3 +29,8 @@ jobs:
           --no-git \
           --no-banner \
           --exit-code 1
+
+      - name: Step 4A - list Scennde file
+        run: |
+          echo "File Inside Gitleaks Scanning Scops"
+          echo "===================================="
