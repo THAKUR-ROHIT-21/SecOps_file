@@ -12,10 +12,6 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
-      # Display Application Information
-      # --------------------------------------------------
-
       - name: Display Received Application Information
         run: |
           echo "============================================"
@@ -29,10 +25,6 @@ jobs:
           echo "============================================"
 
 
-      # --------------------------------------------------
-      # Checkout Exact Application Commit
-      # --------------------------------------------------
-
       - name: Checkout Exact Application Commit
         uses: actions/checkout@v4
         with:
@@ -41,41 +33,44 @@ jobs:
           path: application
 
 
-      # --------------------------------------------------
-      # Verify Application Checkout
-      # --------------------------------------------------
-
-      - name: Verify Checked Out Application
-        working-directory: application
+      - name: Verify Application Checkout
         run: |
           echo "============================================"
-          echo "Application Source Successfully Checked Out"
+          echo "VERIFY APPLICATION CHECKOUT"
           echo "============================================"
 
-          echo "Expected Commit SHA:"
+          echo "Application Directory:"
+          ls -lah "${GITHUB_WORKSPACE}/application"
+
+          echo ""
+          echo "Git Commit:"
+          git -C "${GITHUB_WORKSPACE}/application" rev-parse HEAD
+
+          echo ""
+          echo "Expected Commit:"
           echo "${{ github.event.client_payload.commit_sha }}"
 
           echo ""
-          echo "Actual Checked Out Commit SHA:"
-          git rev-parse HEAD
+          echo "Application Files:"
+          find "${GITHUB_WORKSPACE}/application" \
+            -type f \
+            -not -path "*/.git/*" \
+            | sort
 
           echo ""
-          echo "Application Files:"
-          find . -type f \
-            -not -path "./.git/*" \
-            | sort
+          echo "Total Files:"
+          find "${GITHUB_WORKSPACE}/application" \
+            -type f \
+            -not -path "*/.git/*" \
+            | wc -l
 
           echo "============================================"
 
-
-      # --------------------------------------------------
-      # Gitleaks Secret Scan
-      # --------------------------------------------------
 
       - name: Step 4 - Scan for Application Secrets
         run: |
           echo "============================================"
-          echo "Starting Gitleaks Secret Scan"
+          echo "STARTING GITLEAKS SECRET SCAN"
           echo "============================================"
 
           docker run --rm \
@@ -88,15 +83,11 @@ jobs:
             --exit-code 1
 
 
-      # --------------------------------------------------
-      # List Scanned Files
-      # --------------------------------------------------
-
       - name: Step 4A - List Scanned Files
         if: always()
         run: |
           echo "============================================"
-          echo "Files Inside Gitleaks Scanning Scope"
+          echo "FILES INSIDE GITLEAKS SCANNING SCOPE"
           echo "============================================"
 
           find "${GITHUB_WORKSPACE}/application" \
