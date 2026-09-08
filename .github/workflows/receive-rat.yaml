@@ -1,36 +1,36 @@
-name: Step 2- Receive Application Trigger
+  name: Step 2- Receive Application Trigger
 
-on:
-  repository_dispatch:
-    types:
-      - application_push
+  on:
+    repository_dispatch:
+      types:
+        - application_push
 
-jobs:
-  receive-trigger:
-    name: Verify Cross-Repo Communication
-    runs-on: ubuntu-latest
+  jobs:
+    receive-trigger:
+      name: Verify Cross-Repo Communication
+      runs-on: ubuntu-latest
 
-    steps:
-      - name: Display Received Application Information
-        run: |
-          echo "SecOps Repo received Appliaction"
-          echo "Application Repositoty: ${{ github.event.client_payload.repository }}"
-          echo "Application Branch: ${{ github.event.client_payload.branch }}"
-          echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha}}"
+      steps:
+        - name: Display Received Application Information
+          run: |
+            echo "SecOps Repo received Appliaction"
+            echo "Application Repositoty: ${{ github.event.client_payload.repository }}"
+            echo "Application Branch: ${{ github.event.client_payload.branch }}"
+            echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha}}"
 
 
-      - name: Step 4 - Scan for Application Secrets
-        run: |
-          docker run --rm \
-          -v "${GITHUB_WORKSPACE}/application:/repo" \
-          ghcr.io/gitleaks/gitleaks:latest \
-          detect \
-          --source=/repo \
-          --no-git \
-          --no-banner \
-          --exit-code 1
+        - name: Step 4 - Scan for Application Secrets
+          run: |
+            docker run --rm \
+            -v "${GITHUB_WORKSPACE}/application:/repo" \
+            ghcr.io/gitleaks/gitleaks:latest \
+            detect \
+            --source=/repo \
+            --no-git \
+            --no-banner \
+            --exit-code 1
 
-      - name: Step 4A - list Scennde file
-        run: |
-          echo "File Inside Gitleaks Scanning Scops"
-          echo "===================================="
+        - name: Step 4A - list Scennde file
+          run: |
+            echo "File Inside Gitleaks Scanning Scops"
+            echo "===================================="
