@@ -18,6 +18,7 @@ jobs:
           echo "Application Branch: ${{ github.event.client_payload.branch }}"
           echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha}}"
 
+          
       - name: Step 4 - Scan for Application Secrets
         run: |
           docker run --rm \
