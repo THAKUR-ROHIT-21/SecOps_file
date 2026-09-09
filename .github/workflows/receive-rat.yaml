@@ -1,4 +1,4 @@
-name: Step 2 - Receive Application Trigger
+name: SecOps Pipeline
 
 on:
   repository_dispatch:
@@ -6,24 +6,24 @@ on:
       - application_push
 
 jobs:
-  receive-trigger:
-    name: Verify Cross-Repo Communication
+
+  # ============================================================
+  # Stage 1: Secret Scanning
+  # ============================================================
+  gitleaks:
+    name: Gitleaks - Secret Scanning
     runs-on: ubuntu-latest
 
     steps:
 
       - name: Display Received Application Information
         run: |
-          echo "============================================"
-          echo "SecOps Repository Received Application"
-          echo "============================================"
-
+          echo "=============================================="
+          echo "SecOps Repository Received Application Trigger"
+          echo "=============================================="
           echo "Application Repository: ${{ github.event.client_payload.repository }}"
-          echo "Application Branch: ${{ github.event.client_payload.branch }}"
+          echo "Application Branch:     ${{ github.event.client_payload.branch }}"
           echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha }}"
-
-          echo "============================================"
-
 
       - name: Checkout Exact Application Commit
         uses: actions/checkout@v4
@@ -32,47 +32,18 @@ jobs:
           ref: ${{ github.event.client_payload.commit_sha }}
           path: application
 
-
-      - name: Verify Application Checkout
+      - name: Verify Checked Out Commit
         run: |
-          echo "============================================"
-          echo "VERIFY APPLICATION CHECKOUT"
-          echo "============================================"
+          echo "Application Source Successfully Checked Out"
+          echo "=============================================="
+          echo "Checked Out Commit SHA:"
+          git -C application rev-parse HEAD
 
-          echo "Application Directory:"
-          ls -lah "${GITHUB_WORKSPACE}/application"
-
-          echo ""
-          echo "Git Commit:"
-          git -C "${GITHUB_WORKSPACE}/application" rev-parse HEAD
-
-          echo ""
-          echo "Expected Commit:"
-          echo "${{ github.event.client_payload.commit_sha }}"
-
-          echo ""
-          echo "Application Files:"
-          find "${GITHUB_WORKSPACE}/application" \
-            -type f \
-            -not -path "*/.git/*" \
-            | sort
-
-          echo ""
-          echo "Total Files:"
-          find "${GITHUB_WORKSPACE}/application" \
-            -type f \
-            -not -path "*/.git/*" \
-            | wc -l
-
-          echo "============================================"
-
-
+      # ------------------------------------------------------------
+      # Scan Application Source for Secrets
+      # ------------------------------------------------------------
       - name: Step 4 - Scan for Application Secrets
         run: |
-          echo "============================================"
-          echo "STARTING GITLEAKS SECRET SCAN"
-          echo "============================================"
-
           docker run --rm \
             -v "${GITHUB_WORKSPACE}/application:/repo" \
             ghcr.io/gitleaks/gitleaks:latest \
@@ -80,19 +51,117 @@ jobs:
             --source=/repo \
             --no-git \
             --no-banner \
+            --report-format json \
+            --report-path /repo/gitleaks-report.json \
             --exit-code 1
 
-
-      - name: Step 4A - List Scanned Files
+      - name: Step 4B - Show Detected Secrets
         if: always()
         run: |
-          echo "============================================"
-          echo "FILES INSIDE GITLEAKS SCANNING SCOPE"
-          echo "============================================"
+          echo "Gitleaks Findings:"
+          echo "====================================="
 
-          find "${GITHUB_WORKSPACE}/application" \
-            -type f \
-            -not -path "*/.git/*" \
-            | sort
+          if [ -f "application/gitleaks-report.json" ]; then
+            jq -r '
+              .[] |
+              "File: \(.File)\nLine: \(.StartLine)\nRule: \(.RuleID)\nSecret: \(.Match)\nCommit: \(.Commit // "N/A")\n---"
+            ' application/gitleaks-report.json
+          else
+            echo "No report file found — either no secrets were detected or the scan did not run."
+          fi
 
-          echo "============================================"
+      - name: Step 4A - List Scanned Files
+        run: |
+          echo "Files Inside Gitleaks Scanning Scope:"
+          echo "====================================="
+
+          find application -type f -print
+
+
+  # ============================================================
+  # Stage 2: Dependency Scanning
+  # ============================================================
+  trivy:
+    name: Trivy - Dependency Scanning
+    runs-on: ubuntu-latest
+    needs: gitleaks
+
+    steps:
+
+      - name: Display Received Application Information
+        run: |
+          echo "=============================================="
+          echo "SecOps Repository Received Dependency Trigger"
+          echo "=============================================="
+          echo "Application Repository: ${{ github.event.client_payload.repository }}"
+          echo "Application Branch:     ${{ github.event.client_payload.branch }}"
+          echo "Application Commit SHA: ${{ github.event.client_payload.commit_sha }}"
+
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          path: application
+
+      - name: Verify Checked Out Commit
+        run: |
+          echo "Application Source Successfully Checked Out"
+          echo "=============================================="
+          echo "Checked Out Commit SHA:"
+          git -C application rev-parse HEAD
+
+      # ------------------------------------------------------------
+      # Scan Application Dependencies for Vulnerabilities
+      # ------------------------------------------------------------
+      - name: Step 1 - Scan Dependencies for Vulnerabilities
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}/application:/repo" \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            aquasec/trivy:latest \
+            fs \
+            /repo \
+            --scanners vuln \
+            --severity CRITICAL,HIGH \
+            --format table \
+            --exit-code 1
+
+      - name: Step 2 - Generate JSON Report of Findings
+        if: always()
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}/application:/repo" \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            aquasec/trivy:latest \
+            fs \
+            /repo \
+            --scanners vuln \
+            --severity CRITICAL,HIGH \
+            --format json \
+            --output /repo/trivy-report.json \
+            --exit-code 0
+
+      - name: Step 3 - Show Vulnerability Summary
+        if: always()
+        run: |
+          echo "Trivy Dependency Findings:"
+          echo "====================================="
+
+          if [ -f "application/trivy-report.json" ]; then
+            jq -r '
+              .Results[]? |
+              select(.Vulnerabilities != null) |
+              .Vulnerabilities[] |
+              "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
+            ' application/trivy-report.json
+          else
+            echo "No report file found — either no vulnerable dependencies were detected or the scan did not run."
+          fi
+
+      - name: Upload Trivy Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-dependency-report
+          path: application/trivy-report.json
