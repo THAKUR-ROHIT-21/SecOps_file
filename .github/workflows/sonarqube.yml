@@ -1,0 +1,96 @@
+name: SonarQube Code Quality Scan
+
+on:
+  repository_dispatch:
+    types:
+      - application_push
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to scan (used only for manual trigger)'
+        required: false
+        default: 'main'
+
+jobs:
+  sonarqube-scan:
+    name: SonarQube - Code Quality & Smell
+    runs-on: self-hosted
+
+    steps:
+      - name: Resolve Target Ref
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ github.event.inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.event.client_payload.commit_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Display Received Application Information
+        run: |
+          echo "SonarQube scan triggered"
+          echo "Event: ${{ github.event_name }}"
+          echo "Target Ref/Commit: ${{ steps.resolve.outputs.ref }}"
+
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository || 'DEVENDRA-5470/hireflow-with-secops' }}
+          ref: ${{ steps.resolve.outputs.ref }}
+          path: application
+
+      - name: Verify Checked Out Commit
+        run: |
+          echo "Application source checked out"
+          echo "Checked Out Commit SHA:"
+          git -C application rev-parse HEAD
+
+      - name: Wait for Local SonarQube Server to be Ready
+        run: |
+          echo "Checking SonarQube server availability at http://localhost:9000 ..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s http://localhost:9000/api/system/status | grep -o '"status":"[A-Z]*"' || echo "")
+            echo "Attempt $i: $STATUS"
+            if echo "$STATUS" | grep -q "UP"; then
+              echo "SonarQube is UP."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SonarQube did not become ready in time."
+          exit 1
+
+      - name: Scan Backend Code
+        run: |
+          docker run --rm \
+            --network host \
+            -v "${GITHUB_WORKSPACE}/application/backend:/usr/src" \
+            sonarsource/sonar-scanner-cli:latest \
+            -Dsonar.projectKey=hireflow-backend \
+            -Dsonar.projectName=hireflow-backend \
+            -Dsonar.sources=/usr/src \
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/** \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+
+      # Frontend scan temporarily disabled — testing backend first
+      # - name: Scan Frontend Code
+      #   run: |
+      #     docker run --rm \
+      #       --network host \
+      #       -v "${GITHUB_WORKSPACE}/application/frontend:/usr/src" \
+      #       sonarsource/sonar-scanner-cli:latest \
+      #       -Dsonar.projectKey=hireflow-frontend \
+      #       -Dsonar.projectName=hireflow-frontend \
+      #       -Dsonar.sources=/usr/src \
+      #       -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/** \
+      #       -Dsonar.host.url=http://localhost:9000 \
+      #       -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+
+      - name: Show SonarQube Dashboard Links
+        if: always()
+        run: |
+          echo "====================================="
+          echo "SonarQube Analysis Complete"
+          echo "====================================="
+          echo "Backend Dashboard: http://${{ vars.SONAR_HOST }}/dashboard?id=hireflow-backend"
