@@ -35,7 +35,7 @@ jobs:
       - name: Checkout Exact Application Commit
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.client_payload.repository || 'nikhil74589/hireflow-with-secops' }}
+          repository: ${{ github.event.client_payload.repository || 'THAKUR-ROHIT-21/DevSecOps_file' }}
           ref: ${{ steps.resolve.outputs.ref }}
           path: application
 
