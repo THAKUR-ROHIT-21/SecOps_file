@@ -1,0 +1,435 @@
+name: Deploy HireFlow to EC2
+
+on:
+
+  workflow_run:
+    workflows:
+      - SecOps Pipeline
+
+    types:
+      - completed
+
+    branches:
+      - main
+
+
+permissions:
+  contents: read
+
+
+jobs:
+
+  # ============================================================
+  # DEPLOYMENT
+  # ============================================================
+
+  deploy-to-ec2:
+
+    name: Deploy Backend & Frontend to EC2
+
+    # IMPORTANT:
+    # Deploy only when SecOps Pipeline is successful
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ========================================================
+      # 1. Deployment Information
+      # ========================================================
+
+      - name: Deployment Information
+        run: |
+
+          echo "============================================"
+          echo "HIRE-FLOW EC2 DEPLOYMENT"
+          echo "============================================"
+
+          echo ""
+          echo "Source Workflow:"
+          echo "${{ github.event.workflow_run.name }}"
+
+          echo ""
+          echo "Workflow Status:"
+          echo "${{ github.event.workflow_run.conclusion }}"
+
+          echo ""
+          echo "Source Commit:"
+          echo "${{ github.event.workflow_run.head_sha }}"
+
+          echo ""
+          echo "Backend Image:"
+          echo "ghcr.io/thakur-rohit-21/hireflow-backend:latest"
+
+          echo ""
+          echo "Frontend Image:"
+          echo "ghcr.io/thakur-rohit-21/hireflow-frontend:latest"
+
+          echo ""
+          echo "Target EC2:"
+          echo "${{ secrets.DEPLOY_HOST }}"
+
+
+      # ========================================================
+      # 2. Configure SSH
+      # ========================================================
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "CONFIGURING SSH"
+          echo "============================================"
+
+          mkdir -p ~/.ssh
+
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" \
+            > ~/.ssh/deploy_key
+
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh-keyscan -H \
+            "${{ secrets.DEPLOY_HOST }}" \
+            >> ~/.ssh/known_hosts
+
+          echo "SSH configuration completed."
+
+
+      # ========================================================
+      # 3. Test EC2 Connection
+      # ========================================================
+
+      - name: Test EC2 Connection
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "TESTING EC2 CONNECTION"
+          echo "============================================"
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "hostname && docker --version"
+
+          echo ""
+          echo "EC2 connection successful."
+
+
+      # ========================================================
+      # 4. Deploy Application
+      # ========================================================
+
+      - name: Deploy Application to EC2
+        shell: bash
+
+        env:
+
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+          SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+
+        run: |
+
+          echo "============================================"
+          echo "DEPLOYING APPLICATION TO EC2"
+          echo "============================================"
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "GHCR_USERNAME='${GHCR_USERNAME}' \
+             GHCR_TOKEN='${GHCR_TOKEN}' \
+             SOURCE_COMMIT='${SOURCE_COMMIT}' \
+             bash -s" <<'REMOTE_SCRIPT'
+
+          set -e
+
+          echo "============================================"
+          echo "REMOTE EC2 DEPLOYMENT"
+          echo "============================================"
+
+
+          # ==================================================
+          # Variables
+          # ==================================================
+
+          BACKEND_IMAGE="ghcr.io/thakur-rohit-21/hireflow-backend"
+
+          FRONTEND_IMAGE="ghcr.io/thakur-rohit-21/hireflow-frontend"
+
+          BACKEND_CONTAINER="hireflow-backend"
+
+          FRONTEND_CONTAINER="hireflow-frontend"
+
+
+          # ==================================================
+          # System Information
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "SYSTEM INFORMATION"
+          echo "============================================"
+
+          echo "Hostname:"
+          hostname
+
+          echo ""
+          echo "Docker:"
+          docker --version
+
+
+          # ==================================================
+          # Login to GHCR
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "LOGIN TO GHCR"
+          echo "============================================"
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io \
+            -u "$GHCR_USERNAME" \
+            --password-stdin
+
+          echo "GHCR login successful."
+
+
+          # ==================================================
+          # Pull Backend Image
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "PULLING BACKEND IMAGE"
+          echo "============================================"
+
+          docker pull "${BACKEND_IMAGE}:latest"
+
+
+          # ==================================================
+          # Pull Frontend Image
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "PULLING FRONTEND IMAGE"
+          echo "============================================"
+
+          docker pull "${FRONTEND_IMAGE}:latest"
+
+
+          # ==================================================
+          # Stop Existing Containers
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "STOPPING OLD CONTAINERS"
+          echo "============================================"
+
+          docker stop "$BACKEND_CONTAINER" 2>/dev/null || true
+
+          docker stop "$FRONTEND_CONTAINER" 2>/dev/null || true
+
+
+          # ==================================================
+          # Remove Existing Containers
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "REMOVING OLD CONTAINERS"
+          echo "============================================"
+
+          docker rm "$BACKEND_CONTAINER" 2>/dev/null || true
+
+          docker rm "$FRONTEND_CONTAINER" 2>/dev/null || true
+
+
+          # ==================================================
+          # Start Backend
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "STARTING BACKEND"
+          echo "============================================"
+
+          docker run -d \
+            --name "$BACKEND_CONTAINER" \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            "${BACKEND_IMAGE}:latest"
+
+
+          # ==================================================
+          # Start Frontend
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "STARTING FRONTEND"
+          echo "============================================"
+
+          docker run -d \
+            --name "$FRONTEND_CONTAINER" \
+            --restart unless-stopped \
+            -p 80:80 \
+            "${FRONTEND_IMAGE}:latest"
+
+
+          # ==================================================
+          # Wait for Application
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "WAITING FOR APPLICATION"
+          echo "============================================"
+
+          sleep 10
+
+
+          # ==================================================
+          # Container Status
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "CONTAINER STATUS"
+          echo "============================================"
+
+          docker ps \
+            --filter "name=$BACKEND_CONTAINER" \
+            --filter "name=$FRONTEND_CONTAINER"
+
+
+          # ==================================================
+          # Backend Health Check
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "BACKEND HEALTH CHECK"
+          echo "============================================"
+
+          if curl \
+            --silent \
+            --fail \
+            --max-time 10 \
+            http://localhost:3000/health \
+            > /dev/null; then
+
+            echo "Backend health check PASSED."
+
+          else
+
+            echo "Backend health check FAILED."
+
+            echo ""
+            echo "Backend Logs:"
+            docker logs --tail 100 "$BACKEND_CONTAINER"
+
+            exit 1
+
+          fi
+
+
+          # ==================================================
+          # Frontend Health Check
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "FRONTEND HEALTH CHECK"
+          echo "============================================"
+
+          if curl \
+            --silent \
+            --fail \
+            --max-time 10 \
+            http://localhost/ \
+            > /dev/null; then
+
+            echo "Frontend health check PASSED."
+
+          else
+
+            echo "Frontend health check FAILED."
+
+            echo ""
+            echo "Frontend Logs:"
+            docker logs --tail 100 "$FRONTEND_CONTAINER"
+
+            exit 1
+
+          fi
+
+
+          # ==================================================
+          # Final Deployment Status
+          # ==================================================
+
+          echo ""
+          echo "============================================"
+          echo "DEPLOYMENT SUCCESSFUL"
+          echo "============================================"
+
+          echo ""
+          echo "Backend Container:"
+          docker ps \
+            --filter "name=$BACKEND_CONTAINER"
+
+          echo ""
+          echo "Frontend Container:"
+          docker ps \
+            --filter "name=$FRONTEND_CONTAINER"
+
+          echo ""
+          echo "Source Commit:"
+          echo "$SOURCE_COMMIT"
+
+          echo ""
+          echo "Application successfully deployed."
+
+          REMOTE_SCRIPT
+
+
+      # ========================================================
+      # 5. Deployment Completed
+      # ========================================================
+
+      - name: Deployment Completed
+        if: success()
+        run: |
+
+          echo "============================================"
+          echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
+          echo "============================================"
+
+          echo ""
+          echo "Backend:"
+          echo "ghcr.io/thakur-rohit-21/hireflow-backend:latest"
+
+          echo ""
+          echo "Frontend:"
+          echo "ghcr.io/thakur-rohit-21/hireflow-frontend:latest"
+
+          echo ""
+          echo "EC2 Deployment: SUCCESS"
+
+          echo ""
+          echo "Deployed Commit:"
+          echo "${{ github.event.workflow_run.head_sha }}"
