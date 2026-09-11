@@ -16,7 +16,7 @@ jobs:
 
   sonarqube-scan:
 
-    name: SonarQube - Code Quality & Smell
+    name: SonarQube - Code Quality & Code Smell
 
     runs-on: self-hosted
 
@@ -45,7 +45,7 @@ jobs:
 
           echo ""
           echo "SonarQube URL configured:"
-          
+
           if [ -z "$SONAR_HOST_URL" ]; then
             echo "NO"
             echo "ERROR: SONAR_HOST_URL secret is empty."
@@ -53,6 +53,7 @@ jobs:
           else
             echo "YES"
           fi
+
 
       # ==========================================================
       # 2. Resolve Application Commit
@@ -85,6 +86,7 @@ jobs:
 
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
+
       # ==========================================================
       # 3. Application Information
       # ==========================================================
@@ -107,6 +109,7 @@ jobs:
           echo "Target Ref:"
           echo "${{ steps.resolve.outputs.ref }}"
 
+
       # ==========================================================
       # 4. Checkout Application Repository
       # ==========================================================
@@ -119,8 +122,9 @@ jobs:
           path: application
           fetch-depth: 0
 
+
       # ==========================================================
-      # 5. Verify Application
+      # 5. Verify Application Source
       # ==========================================================
       - name: Verify Application Source
         shell: bash
@@ -139,7 +143,7 @@ jobs:
 
           echo ""
           echo "Backend Directory:"
-          
+
           if [ ! -d "application/backend" ]; then
 
             echo "ERROR: application/backend does not exist."
@@ -149,6 +153,7 @@ jobs:
           fi
 
           ls -la application/backend
+
 
       # ==========================================================
       # 6. Test Runner -> SonarQube Connectivity
@@ -204,6 +209,7 @@ jobs:
 
           fi
 
+
       # ==========================================================
       # 7. Verify Docker
       # ==========================================================
@@ -223,8 +229,9 @@ jobs:
 
           echo "Docker is working."
 
+
       # ==========================================================
-      # 8. Pull Sonar Scanner
+      # 8. Pull Sonar Scanner Image
       # ==========================================================
       - name: Pull Sonar Scanner Image
         shell: bash
@@ -235,6 +242,7 @@ jobs:
           echo "============================================"
 
           docker pull sonarsource/sonar-scanner-cli:latest
+
 
       # ==========================================================
       # 9. SonarQube Backend Scan
@@ -264,26 +272,25 @@ jobs:
 
           echo ""
           echo "Project:"
-          echo "hireflow-backend"
+          echo "Hireflow-backend"
 
           echo ""
           echo "Starting SonarQube scanner..."
 
           docker run --rm \
             --network host \
-            -e SONAR_HOST_URL="$SONAR_HOST_URL" \
-            -e SONAR_TOKEN="$SONAR_TOKEN" \
             -v "${GITHUB_WORKSPACE}/application/backend:/usr/src" \
             sonarsource/sonar-scanner-cli:latest \
-            -Dsonar.projectKey=hireflow-backend \
-            -Dsonar.projectName=hireflow-backend \
+            -Dsonar.projectKey=Hireflow-backend \
+            -Dsonar.projectName="Hireflow Backend" \
             -Dsonar.sources=/usr/src \
             -Dsonar.host.url="$SONAR_HOST_URL" \
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
 
+
       # ==========================================================
-      # 10. Final Result
+      # 10. SonarQube Dashboard
       # ==========================================================
       - name: SonarQube Dashboard
         if: always()
@@ -296,10 +303,13 @@ jobs:
           echo "============================================"
 
           echo "Project:"
-          echo "hireflow-backend"
+          echo "Hireflow-backend"
 
           echo ""
           echo "Dashboard:"
-          echo "$SONAR_HOST_URL/dashboard?id=hireflow-backend"
+          echo "$SONAR_HOST_URL/dashboard?id=Hireflow-backend"
 
+          echo ""
+          echo "============================================"
+          echo "SONARQUBE SCAN COMPLETED"
           echo "============================================"
