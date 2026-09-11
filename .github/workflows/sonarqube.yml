@@ -70,7 +70,7 @@ jobs:
             -Dsonar.projectName=hireflow-backend \
             -Dsonar.sources=/usr/src \
             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/** \
-            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.host.url=${{ secrets.URL_SONAR }} \
             -Dsonar.token=${{ secrets.SONAR_TOKEN }}
 
       # Frontend scan temporarily disabled — testing backend first
