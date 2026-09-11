@@ -8,196 +8,298 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: 'Commit SHA to scan (used only for manual trigger)'
+        description: "Commit SHA or branch to scan"
         required: false
-        default: 'main'
+        default: "main"
 
 jobs:
+
   sonarqube-scan:
+
     name: SonarQube - Code Quality & Smell
+
     runs-on: self-hosted
 
     env:
-      SONAR_URL: ${{ secrets.SONAR_HOST_URL }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
     steps:
 
-      # --------------------------------------------------
-      # 1. Resolve Target Commit
-      # --------------------------------------------------
-      - name: Resolve Target Ref
-        id: resolve
+      # ==========================================================
+      # 1. Runner Information
+      # ==========================================================
+      - name: Runner Information
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "ref=${{ github.event.inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+
+          echo "============================================"
+          echo "RUNNER INFORMATION"
+          echo "============================================"
+
+          echo "Hostname:"
+          hostname
+
+          echo ""
+          echo "Runner IP:"
+          hostname -I || true
+
+          echo ""
+          echo "SonarQube URL configured:"
+          
+          if [ -z "$SONAR_HOST_URL" ]; then
+            echo "NO"
+            echo "ERROR: SONAR_HOST_URL secret is empty."
+            exit 1
           else
-            echo "ref=${{ github.event.client_payload.commit_sha }}" >> "$GITHUB_OUTPUT"
+            echo "YES"
           fi
 
-      # --------------------------------------------------
-      # 2. Display Trigger Information
-      # --------------------------------------------------
-      - name: Display Received Application Information
+      # ==========================================================
+      # 2. Resolve Application Commit
+      # ==========================================================
+      - name: Resolve Target Commit
+        id: resolve
+        shell: bash
         run: |
+
           echo "============================================"
-          echo "SonarQube Scan Triggered"
-          echo "============================================"
-          echo "Event: ${{ github.event_name }}"
-          echo "Repository: ${{ github.event.client_payload.repository || 'THAKUR-ROHIT-21/DevSecOps_file' }}"
-          echo "Target Ref/Commit: ${{ steps.resolve.outputs.ref }}"
+          echo "RESOLVING TARGET COMMIT"
           echo "============================================"
 
-      # --------------------------------------------------
-      # 3. Checkout Exact Application Commit
-      # --------------------------------------------------
-      - name: Checkout Exact Application Commit
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+
+            REF="${{ github.event.inputs.commit_sha }}"
+
+          else
+
+            REF="${{ github.event.client_payload.commit_sha }}"
+
+          fi
+
+          if [ -z "$REF" ]; then
+            REF="main"
+          fi
+
+          echo "Target Ref:"
+          echo "$REF"
+
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+      # ==========================================================
+      # 3. Application Information
+      # ==========================================================
+      - name: Display Application Information
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "APPLICATION INFORMATION"
+          echo "============================================"
+
+          echo "Event:"
+          echo "${{ github.event_name }}"
+
+          echo ""
+          echo "Repository:"
+          echo "${{ github.event.client_payload.repository || 'THAKUR-ROHIT-21/DevSecOps_file' }}"
+
+          echo ""
+          echo "Target Ref:"
+          echo "${{ steps.resolve.outputs.ref }}"
+
+      # ==========================================================
+      # 4. Checkout Application Repository
+      # ==========================================================
+      - name: Checkout Application
         uses: actions/checkout@v4
+
         with:
           repository: ${{ github.event.client_payload.repository || 'THAKUR-ROHIT-21/DevSecOps_file' }}
           ref: ${{ steps.resolve.outputs.ref }}
           path: application
+          fetch-depth: 0
 
-      # --------------------------------------------------
-      # 4. Verify Checkout
-      # --------------------------------------------------
-      - name: Verify Checked Out Commit
+      # ==========================================================
+      # 5. Verify Application
+      # ==========================================================
+      - name: Verify Application Source
+        shell: bash
         run: |
+
           echo "============================================"
-          echo "Application source checked out"
+          echo "APPLICATION SOURCE"
           echo "============================================"
 
-          echo "Checked Out Commit SHA:"
+          echo "Checked Out Commit:"
           git -C application rev-parse HEAD
 
           echo ""
           echo "Application Directory:"
           ls -la application
 
-      # --------------------------------------------------
-      # 5. Verify SonarQube Connectivity
-      # --------------------------------------------------
-      - name: Check SonarQube Connectivity
-        run: |
-          echo "============================================"
-          echo "Checking SonarQube Server"
-          echo "============================================"
-
-          echo "SonarQube URL: $SONAR_URL"
-
-          HTTP_STATUS=$(curl -s -o /tmp/sonar-status.json \
-            -w "%{http_code}" \
-            "$SONAR_URL/api/system/status")
-
-          echo "HTTP Status: $HTTP_STATUS"
-
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "ERROR: Unable to connect to SonarQube."
-            cat /tmp/sonar-status.json || true
-            exit 1
-          fi
-
-          cat /tmp/sonar-status.json
-
-      # --------------------------------------------------
-      # 6. Wait for SonarQube
-      # --------------------------------------------------
-      - name: Wait for SonarQube Server to be Ready
-        run: |
-          echo "============================================"
-          echo "Waiting for SonarQube"
-          echo "============================================"
-
-          for i in $(seq 1 30); do
-
-            RESPONSE=$(curl -sf "$SONAR_URL/api/system/status" || true)
-
-            STATUS=$(echo "$RESPONSE" \
-              | grep -o '"status":"[A-Z]*"' \
-              | head -1 || true)
-
-            echo "Attempt $i: $STATUS"
-
-            if echo "$STATUS" | grep -q '"status":"UP"'; then
-              echo ""
-              echo "SonarQube is UP and ready."
-              exit 0
-            fi
-
-            echo "SonarQube is not ready yet."
-            sleep 5
-          done
-
           echo ""
-          echo "ERROR: SonarQube did not become ready in time."
-          exit 1
-
-      # --------------------------------------------------
-      # 7. Verify Backend Directory
-      # --------------------------------------------------
-      - name: Verify Backend Source
-        run: |
-          echo "============================================"
-          echo "Backend Source"
-          echo "============================================"
-
+          echo "Backend Directory:"
+          
           if [ ! -d "application/backend" ]; then
-            echo "ERROR: application/backend directory not found."
+
+            echo "ERROR: application/backend does not exist."
+
             exit 1
+
           fi
 
           ls -la application/backend
 
-      # --------------------------------------------------
-      # 8. SonarQube Backend Scan
-      # --------------------------------------------------
-      - name: Scan Backend Code
+      # ==========================================================
+      # 6. Test Runner -> SonarQube Connectivity
+      # ==========================================================
+      - name: Test SonarQube Connectivity
+        shell: bash
         run: |
+
           echo "============================================"
-          echo "Starting Backend SonarQube Scan"
+          echo "SONARQUBE CONNECTIVITY"
           echo "============================================"
+
+          echo "Testing SonarQube server..."
+
+          HTTP_STATUS=$(curl \
+            --silent \
+            --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --output /tmp/sonar-status.json \
+            --write-out "%{http_code}" \
+            "$SONAR_HOST_URL/api/system/status")
+
+          echo ""
+          echo "HTTP Status:"
+          echo "$HTTP_STATUS"
+
+          echo ""
+          echo "SonarQube Response:"
+          cat /tmp/sonar-status.json
+
+          echo ""
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+
+            echo "ERROR: Cannot connect to SonarQube."
+
+            exit 1
+
+          fi
+
+          if grep -q '"status":"UP"' /tmp/sonar-status.json; then
+
+            echo "============================================"
+            echo "SUCCESS: SONARQUBE IS UP"
+            echo "============================================"
+
+          else
+
+            echo "ERROR: SonarQube status is not UP."
+
+            exit 1
+
+          fi
+
+      # ==========================================================
+      # 7. Verify Docker
+      # ==========================================================
+      - name: Verify Docker
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "DOCKER"
+          echo "============================================"
+
+          docker --version
+
+          echo ""
+
+          docker info > /dev/null
+
+          echo "Docker is working."
+
+      # ==========================================================
+      # 8. Pull Sonar Scanner
+      # ==========================================================
+      - name: Pull Sonar Scanner Image
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "SONAR SCANNER IMAGE"
+          echo "============================================"
+
+          docker pull sonarsource/sonar-scanner-cli:latest
+
+      # ==========================================================
+      # 9. SonarQube Backend Scan
+      # ==========================================================
+      - name: SonarQube Backend Scan
+        shell: bash
+
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+        run: |
+
+          echo "============================================"
+          echo "SONARQUBE BACKEND SCAN"
+          echo "============================================"
+
+          if [ -z "$SONAR_TOKEN" ]; then
+
+            echo "ERROR: SONAR_TOKEN secret is empty."
+
+            exit 1
+
+          fi
+
+          echo "SonarQube server:"
+          echo "$SONAR_HOST_URL"
+
+          echo ""
+          echo "Project:"
+          echo "hireflow-backend"
+
+          echo ""
+          echo "Starting SonarQube scanner..."
 
           docker run --rm \
             --network host \
+            -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+            -e SONAR_TOKEN="$SONAR_TOKEN" \
             -v "${GITHUB_WORKSPACE}/application/backend:/usr/src" \
             sonarsource/sonar-scanner-cli:latest \
             -Dsonar.projectKey=hireflow-backend \
             -Dsonar.projectName=hireflow-backend \
             -Dsonar.sources=/usr/src \
-            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/** \
-            -Dsonar.host.url="$SONAR_URL" \
-            -Dsonar.token="${{ secrets.SONAR_TOKEN }}"
+            -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.token="$SONAR_TOKEN" \
+            -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
 
-      # --------------------------------------------------
-      # 9. Frontend Scan
-      # --------------------------------------------------
-      # Uncomment this section when you want to scan frontend.
-      #
-      # - name: Scan Frontend Code
-      #   run: |
-      #     echo "============================================"
-      #     echo "Starting Frontend SonarQube Scan"
-      #     echo "============================================"
-      #
-      #     docker run --rm \
-      #       --network host \
-      #       -v "${GITHUB_WORKSPACE}/application/frontend:/usr/src" \
-      #       sonarsource/sonar-scanner-cli:latest \
-      #       -Dsonar.projectKey=hireflow-frontend \
-      #       -Dsonar.projectName=hireflow-frontend \
-      #       -Dsonar.sources=/usr/src \
-      #       -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/** \
-      #       -Dsonar.host.url="$SONAR_URL" \
-      #       -Dsonar.token="${{ secrets.SONAR_TOKEN }}"
-
-      # --------------------------------------------------
-      # 10. Dashboard
-      # --------------------------------------------------
-      - name: Show SonarQube Dashboard Links
+      # ==========================================================
+      # 10. Final Result
+      # ==========================================================
+      - name: SonarQube Dashboard
         if: always()
+        shell: bash
         run: |
+
+          echo ""
           echo "============================================"
-          echo "SonarQube Analysis Complete"
+          echo "SONARQUBE ANALYSIS"
           echo "============================================"
-          echo "Backend Dashboard:"
-          echo "$SONAR_URL/dashboard?id=hireflow-backend"
+
+          echo "Project:"
+          echo "hireflow-backend"
+
+          echo ""
+          echo "Dashboard:"
+          echo "$SONAR_HOST_URL/dashboard?id=hireflow-backend"
+
           echo "============================================"
