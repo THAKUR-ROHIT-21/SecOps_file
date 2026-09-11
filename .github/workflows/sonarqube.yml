@@ -70,7 +70,7 @@ jobs:
             -Dsonar.projectName=hireflow-backend \
             -Dsonar.sources=/usr/src \
             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/** \
-            -Dsonar.host.url=${{ secrets.URL_SONAR }} \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
             -Dsonar.token=${{ secrets.SONAR_TOKEN }}
 
       # Frontend scan temporarily disabled — testing backend first
@@ -93,4 +93,4 @@ jobs:
           echo "====================================="
           echo "SonarQube Analysis Complete"
           echo "====================================="
-          echo "Backend Dashboard: ${{ secrets.URL_SONAR }}/dashboard?id=hireflow-backend"
+          echo "Backend Dashboard: ${{ secrets.SONAR_HOST_URL }}/dashboard?id=hireflow-backend"
