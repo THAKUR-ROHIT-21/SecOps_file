@@ -1,634 +1,718 @@
-# name: SecOps Pipeline
-
-# on:
-#   repository_dispatch:
-#     types:
-#       - application_push
-
-# permissions:
-#   contents: read
-#   packages: write
-
-# jobs:
-
-#   # ============================================================
-#   # STAGE 1 - SONARQUBE
-#   # ============================================================
-
-#   sonarqube-scan:
-#     # name: SonarQube - Code Quality Analysis
-#     runs-on: self-hosted
-
-#     steps:
-#       - name: SonarQube Quality Gate
-#         uses: SonarSource/sonarqube-quality-gate-action@master
-#         with:
-#           scanMetadataReportFile: application/backend/.scannerwork/report-task.txt
-#           pollingTimeoutSec: 300
-
-#         env:
-#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-#           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-#       - name: Display Application Information
-#         run: |
-#           echo "============================================"
-#           echo "SONARQUBE CODE QUALITY ANALYSIS"
-#           echo "============================================"
-
-#           echo "Repository:"
-#           echo "${{ github.event.client_payload.repository }}"
-
-#           echo "Branch:"
-#           echo "${{ github.event.client_payload.branch }}"
-
-#           echo "Commit:"
-#           echo "${{ github.event.client_payload.commit_sha }}"
-
-#       - name: Checkout Exact Application Commit
-#         uses: actions/checkout@v4
-#         with:
-#           repository: ${{ github.event.client_payload.repository }}
-#           ref: ${{ github.event.client_payload.commit_sha }}
-#           path: application
-
-#       - name: Verify Application Commit
-#         run: |
-#           echo "Checked Out Commit:"
-#           git -C application rev-parse HEAD
-
-#       - name: Verify Backend Source
-#         run: |
-#           echo "============================================"
-#           echo "VERIFYING BACKEND SOURCE"
-#           echo "============================================"
-
-#           if [ ! -d "application/backend" ]; then
-#             echo "ERROR: application/backend directory not found."
-#             exit 1
-#           fi
-
-#           echo "Backend source found."
-
-#       - name: Verify SonarQube Connectivity
-#         env:
-#           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-#         run: |
-#           echo "============================================"
-#           echo "CHECKING SONARQUBE"
-#           echo "============================================"
-
-#           curl --fail --silent \
-#             "$SONAR_HOST_URL/api/system/status"
-
-#           echo ""
-#           echo "SonarQube is reachable."
-
-#       - name: Run SonarQube Scanner
-#         env:
-#           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-#         run: |
-
-#           echo "============================================"
-#           echo "RUNNING SONARQUBE SCAN"
-#           echo "============================================"
-
-#           docker pull sonarsource/sonar-scanner-cli:latest
-
-#           docker run --rm \
-#             --network host \
-#             -v "${GITHUB_WORKSPACE}/application/backend:/usr/src" \
-#             sonarsource/sonar-scanner-cli:latest \
-#             -Dsonar.projectKey=Hireflow-backend \
-#             -Dsonar.projectName="Hireflow Backend" \
-#             -Dsonar.sources=/usr/src \
-#             -Dsonar.host.url="$SONAR_HOST_URL" \
-#             -Dsonar.token="$SONAR_TOKEN" \
-#             -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
+name: SecOps Pipeline
 
-#       - name: SonarQube Completed
-#         run: |
-#           echo "============================================"
-#           echo "SONARQUBE SCAN COMPLETED"
-#           echo "============================================"
+on:
+  repository_dispatch:
+    types:
+      - application_push
 
-#           echo "Dashboard:"
-#           echo "${{ secrets.SONAR_HOST_URL }}/dashboard?id=Hireflow-backend"
+permissions:
+  contents: read
+  packages: write
 
+jobs:
 
-#   # ============================================================
-#   # STAGE 2 - GITLEAKS
-#   # ============================================================
+  # ============================================================
+  # STAGE 1 - GITLEAKS
+  # ============================================================
 
-#   gitleaks:
-#     name: Gitleaks - Secret Scanning
-#     runs-on: ubuntu-latest
-#     needs: sonarqube-scan
+  gitleaks:
+    name: Gitleaks - Secret Scanning
+    runs-on: ubuntu-latest
 
-#     steps:
+    steps:
 
-#       - name: Display Application Information
-#         run: |
-#           echo "============================================"
-#           echo "GITLEAKS SECRET SCANNING"
-#           echo "============================================"
+      - name: Display Application Information
+        run: |
+          echo "============================================"
+          echo "GITLEAKS SECRET SCANNING"
+          echo "============================================"
 
-#           echo "Repository:"
-#           echo "${{ github.event.client_payload.repository }}"
+          echo "Repository:"
+          echo "${{ github.event.client_payload.repository }}"
 
-#           echo "Branch:"
-#           echo "${{ github.event.client_payload.branch }}"
+          echo "Branch:"
+          echo "${{ github.event.client_payload.branch }}"
 
-#           echo "Commit:"
-#           echo "${{ github.event.client_payload.commit_sha }}"
+          echo "Commit:"
+          echo "${{ github.event.client_payload.commit_sha }}"
 
-#       - name: Checkout Exact Application Commit
-#         uses: actions/checkout@v4
-#         with:
-#           repository: ${{ github.event.client_payload.repository }}
-#           ref: ${{ github.event.client_payload.commit_sha }}
-#           path: application
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          path: application
 
-#       - name: Verify Checked Out Commit
-#         run: |
-#           echo "Application Commit:"
-#           git -C application rev-parse HEAD
+      - name: Verify Checked Out Commit
+        run: |
+          echo "Application Commit:"
+          git -C application rev-parse HEAD
 
-#       - name: Scan Application for Secrets
-#         run: |
+      - name: Scan Application for Secrets
+        run: |
 
-#           echo "============================================"
-#           echo "RUNNING GITLEAKS"
-#           echo "============================================"
+          echo "============================================"
+          echo "RUNNING GITLEAKS"
+          echo "============================================"
 
-#           docker run --rm \
-#             -v "${GITHUB_WORKSPACE}/application:/repo" \
-#             ghcr.io/gitleaks/gitleaks:latest \
-#             detect \
-#             --source=/repo \
-#             --no-git \
-#             --no-banner \
-#             --report-format json \
-#             --report-path /repo/gitleaks-report.json \
-#             --exit-code 1
-
-#       - name: Show Gitleaks Findings
-#         if: always()
-#         run: |
-
-#           echo "============================================"
-#           echo "GITLEAKS FINDINGS"
-#           echo "============================================"
-
-#           if [ -f "application/gitleaks-report.json" ]; then
-
-#             if [ "$(jq 'length' application/gitleaks-report.json)" -gt 0 ]; then
-
-#               jq -r '
-#                 .[] |
-#                 "File: \(.File)\nLine: \(.StartLine)\nRule: \(.RuleID)\nCommit: \(.Commit // "N/A")\n---"
-#               ' application/gitleaks-report.json
-
-#             else
-
-#               echo "No secrets detected."
-
-#             fi
-
-#           else
-
-#             echo "No Gitleaks report generated."
-
-#           fi
-
-#       - name: List Scanned Files
-#         run: |
-#           echo "============================================"
-#           echo "SCANNED FILES"
-#           echo "============================================"
-
-#           find application -type f -print
-
-
-#   # ============================================================
-#   # STAGE 3 - TRIVY DEPENDENCY SCANNING
-#   # ============================================================
-
-#   trivy-deps:
-#     name: Trivy - Dependency Scanning
-#     runs-on: ubuntu-latest
-#     needs: gitleaks
-
-#     steps:
-
-#       - name: Display Application Information
-#         run: |
-#           echo "============================================"
-#           echo "TRIVY DEPENDENCY SCANNING"
-#           echo "============================================"
-
-#           echo "Repository:"
-#           echo "${{ github.event.client_payload.repository }}"
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}/application:/repo" \
+            ghcr.io/gitleaks/gitleaks:latest \
+            detect \
+            --source=/repo \
+            --no-git \
+            --no-banner \
+            --report-format json \
+            --report-path /repo/gitleaks-report.json \
+            --exit-code 1
 
-#           echo "Commit:"
-#           echo "${{ github.event.client_payload.commit_sha }}"
+      - name: Show Gitleaks Findings
+        if: always()
+        run: |
 
-#       - name: Checkout Exact Application Commit
-#         uses: actions/checkout@v4
-#         with:
-#           repository: ${{ github.event.client_payload.repository }}
-#           ref: ${{ github.event.client_payload.commit_sha }}
-#           path: application
-
-#       - name: Verify Checked Out Commit
-#         run: |
-#           git -C application rev-parse HEAD
-
-#       - name: Run Trivy Dependency Scan
-#         run: |
-
-#           echo "============================================"
-#           echo "RUNNING TRIVY DEPENDENCY SCAN"
-#           echo "============================================"
-
-#           mkdir -p trivy-cache
-
-#           docker run --rm \
-#             -v "${GITHUB_WORKSPACE}/application:/repo" \
-#             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
-#             aquasec/trivy:latest \
-#             fs \
-#             /repo \
-#             --scanners vuln \
-#             --severity CRITICAL,HIGH \
-#             --format table \
-#             --exit-code 1
-
-#       - name: Generate Trivy Dependency JSON Report
-#         if: always()
-#         run: |
-
-#           docker run --rm \
-#             -v "${GITHUB_WORKSPACE}/application:/repo" \
-#             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
-#             aquasec/trivy:latest \
-#             fs \
-#             /repo \
-#             --scanners vuln \
-#             --severity CRITICAL,HIGH \
-#             --format json \
-#             --output /repo/trivy-fs-report.json \
-#             --exit-code 0
-
-#       - name: Show Trivy Dependency Findings
-#         if: always()
-#         run: |
-
-#           echo "============================================"
-#           echo "TRIVY DEPENDENCY FINDINGS"
-#           echo "============================================"
-
-#           if [ -f "application/trivy-fs-report.json" ]; then
-
-#             jq -r '
-#               .Results[]? |
-#               select(.Vulnerabilities != null) |
-#               .Vulnerabilities[] |
-#               "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
-#             ' application/trivy-fs-report.json
-
-#           else
-
-#             echo "No Trivy report found."
-
-#           fi
-
-#       - name: Upload Trivy Dependency Report
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: trivy-dependency-report
-#           path: application/trivy-fs-report.json
-
-
-#   # ============================================================
-#   # STAGE 4 - BACKEND BUILD / SCAN / PUSH
-#   # ============================================================
-
-#   build-scan-push-backend:
-#     name: Backend - Build, Scan & Push
-#     runs-on: ubuntu-latest
-#     needs: trivy-deps
-
-#     steps:
-
-#       - name: Display Backend Build Information
-#         run: |
-
-#           echo "============================================"
-#           echo "BACKEND BUILD"
-#           echo "============================================"
-
-#           echo "Commit:"
-#           echo "${{ github.event.client_payload.commit_sha }}"
-
-#       - name: Checkout Exact Application Commit
-#         uses: actions/checkout@v4
-#         with:
-#           repository: ${{ github.event.client_payload.repository }}
-#           ref: ${{ github.event.client_payload.commit_sha }}
-#           path: application
-
-#       - name: Verify Checked Out Commit
-#         run: |
-#           git -C application rev-parse HEAD
-
-#       - name: Build Backend Docker Image
-#         run: |
-
-#           echo "============================================"
-#           echo "BUILDING BACKEND IMAGE"
-#           echo "============================================"
-
-#           docker build \
-#             -t hireflow-backend:${{ github.event.client_payload.commit_sha }} \
-#             -f application/backend/Dockerfile \
-#             application/backend
-
-#       - name: Scan Backend Docker Image
-#         run: |
+          echo "============================================"
+          echo "GITLEAKS FINDINGS"
+          echo "============================================"
 
-#           echo "============================================"
-#           echo "SCANNING BACKEND IMAGE"
-#           echo "============================================"
+          if [ -f "application/gitleaks-report.json" ]; then
 
-#           mkdir -p trivy-cache
+            if [ "$(jq 'length' application/gitleaks-report.json)" -gt 0 ]; then
 
-#           docker run --rm \
-#             -v /var/run/docker.sock:/var/run/docker.sock \
-#             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
-#             aquasec/trivy:latest \
-#             image \
-#             hireflow-backend:${{ github.event.client_payload.commit_sha }} \
-#             --severity CRITICAL,HIGH \
-#             --format table \
-#             --exit-code 1
+              jq -r '
+                .[] |
+                "File: \(.File)\nLine: \(.StartLine)\nRule: \(.RuleID)\nCommit: \(.Commit // "N/A")\n---"
+              ' application/gitleaks-report.json
 
-#       - name: Generate Backend Trivy Report
-#         if: always()
-#         run: |
+            else
 
-#           docker run --rm \
-#             -v /var/run/docker.sock:/var/run/docker.sock \
-#             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
-#             -v "${GITHUB_WORKSPACE}:/output" \
-#             aquasec/trivy:latest \
-#             image \
-#             hireflow-backend:${{ github.event.client_payload.commit_sha }} \
-#             --severity CRITICAL,HIGH \
-#             --format json \
-#             --output /output/trivy-backend-report.json \
-#             --exit-code 0
+              echo "No secrets detected."
 
-#       - name: Show Backend Vulnerability Summary
-#         if: always()
-#         run: |
+            fi
 
-#           echo "============================================"
-#           echo "BACKEND VULNERABILITY SUMMARY"
-#           echo "============================================"
+          else
 
-#           if [ -f "trivy-backend-report.json" ]; then
-
-#             jq -r '
-#               .Results[]? |
-#               select(.Vulnerabilities != null) |
-#               .Vulnerabilities[] |
-#               "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
-#             ' trivy-backend-report.json
+            echo "No Gitleaks report generated."
 
-#           else
+          fi
 
-#             echo "No report found."
-
-#           fi
-
-#       - name: Upload Backend Trivy Report
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: trivy-backend-image-report
-#           path: trivy-backend-report.json
-
-#       - name: Login to GHCR
-#         uses: docker/login-action@v3
-#         with:
-#           registry: ghcr.io
-#           username: ${{ github.actor }}
-#           password: ${{ secrets.GITHUB_TOKEN }}
-
-#       - name: Tag Backend Image
-#         run: |
-
-#           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-backend
-
-#           docker tag \
-#             hireflow-backend:${{ github.event.client_payload.commit_sha }} \
-#             ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
-
-#           docker tag \
-#             hireflow-backend:${{ github.event.client_payload.commit_sha }} \
-#             ${IMAGE_NAME}:latest
-
-#       - name: Push Backend Image
-#         run: |
-
-#           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-backend
-
-#           docker push ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
-
-#           docker push ${IMAGE_NAME}:latest
-
-#           echo "Backend image pushed successfully."
-
-
-#   # ============================================================
-#   # STAGE 5 - FRONTEND BUILD / SCAN / PUSH
-#   # ============================================================
-
-#   build-scan-push-frontend:
-#     name: Frontend - Build, Scan & Push
-#     runs-on: ubuntu-latest
-#     needs: trivy-deps
-
-#     steps:
-
-#       - name: Display Frontend Build Information
-#         run: |
-
-#           echo "============================================"
-#           echo "FRONTEND BUILD"
-#           echo "============================================"
-
-#           echo "Commit:"
-#           echo "${{ github.event.client_payload.commit_sha }}"
-
-#       - name: Checkout Exact Application Commit
-#         uses: actions/checkout@v4
-#         with:
-#           repository: ${{ github.event.client_payload.repository }}
-#           ref: ${{ github.event.client_payload.commit_sha }}
-#           path: application
-
-#       - name: Verify Checked Out Commit
-#         run: |
-#           git -C application rev-parse HEAD
-
-#       - name: Build Frontend Docker Image
-#         run: |
-
-#           echo "============================================"
-#           echo "BUILDING FRONTEND IMAGE"
-#           echo "============================================"
-
-#           docker build \
-#             -t hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
-#             -f application/frontend/Dockerfile \
-#             --build-arg VITE_API_URL=${{ vars.VITE_API_URL }} \
-#             application/frontend
+      - name: List Scanned Files
+        run: |
+          echo "============================================"
+          echo "SCANNED FILES"
+          echo "============================================"
 
-#       - name: Scan Frontend Docker Image
-#         run: |
+          find application -type f -print
 
-#           echo "============================================"
-#           echo "SCANNING FRONTEND IMAGE"
-#           echo "============================================"
 
-#           mkdir -p trivy-cache
+  # ============================================================
+  # STAGE 2 - SONARQUBE
+  # ============================================================
 
-#           docker run --rm \
-#             -v /var/run/docker.sock:/var/run/docker.sock \
-#             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
-#             aquasec/trivy:latest \
-#             image \
-#             hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
-#             --severity CRITICAL,HIGH \
-#             --format table \
-#             --exit-code 1
+  sonarqube-scan:
+    name: SonarQube - Code Quality Analysis
+    runs-on: self-hosted
+    needs: gitleaks
 
-#       - name: Generate Frontend Trivy Report
-#         if: always()
-#         run: |
+    steps:
 
-#           docker run --rm \
-#             -v /var/run/docker.sock:/var/run/docker.sock \
-#             -v "${GITHUB_WORKSPACE}:/output" \
-#             aquasec/trivy:latest \
-#             image \
-#             hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
-#             --severity CRITICAL,HIGH \
-#             --format json \
-#             --output /output/trivy-frontend-report.json \
-#             --exit-code 0
+      # ----------------------------------------------------------
+      # CHECKOUT
+      # ----------------------------------------------------------
 
-#       - name: Show Frontend Vulnerability Summary
-#         if: always()
-#         run: |
+      - name: Display Application Information
+        run: |
 
-#           echo "============================================"
-#           echo "FRONTEND VULNERABILITY SUMMARY"
-#           echo "============================================"
+          echo "============================================"
+          echo "SONARQUBE CODE QUALITY ANALYSIS"
+          echo "============================================"
 
-#           if [ -f "trivy-frontend-report.json" ]; then
+          echo "Repository:"
+          echo "${{ github.event.client_payload.repository }}"
 
-#             jq -r '
-#               .Results[]? |
-#               select(.Vulnerabilities != null) |
-#               .Vulnerabilities[] |
-#               "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
-#             ' trivy-frontend-report.json
+          echo "Branch:"
+          echo "${{ github.event.client_payload.branch }}"
 
-#           else
+          echo "Commit:"
+          echo "${{ github.event.client_payload.commit_sha }}"
 
-#             echo "No report found."
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          path: application
+          fetch-depth: 0
 
-#           fi
+      - name: Verify Application Commit
+        run: |
 
-#       - name: Upload Frontend Trivy Report
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: trivy-frontend-image-report
-#           path: trivy-frontend-report.json
+          echo "============================================"
+          echo "CHECKED OUT COMMIT"
+          echo "============================================"
 
-#       - name: Login to GHCR
-#         uses: docker/login-action@v3
-#         with:
-#           registry: ghcr.io
-#           username: ${{ github.actor }}
-#           password: ${{ secrets.GITHUB_TOKEN }}
+          git -C application rev-parse HEAD
 
-#       - name: Tag Frontend Image
-#         run: |
+      # ----------------------------------------------------------
+      # VERIFY BACKEND
+      # ----------------------------------------------------------
 
-#           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-frontend
+      - name: Verify Backend Source
+        run: |
 
-#           docker tag \
-#             hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
-#             ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
+          echo "============================================"
+          echo "VERIFYING BACKEND SOURCE"
+          echo "============================================"
 
-#           docker tag \
-#             hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
-#             ${IMAGE_NAME}:latest
+          if [ ! -d "application/backend" ]; then
+            echo "ERROR: application/backend directory not found."
+            exit 1
+          fi
 
-#       - name: Push Frontend Image
-#         run: |
+          echo "Backend source found."
 
-#           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-frontend
+          echo ""
+          echo "Backend files:"
+          find application/backend -maxdepth 2 -type f | head -50
 
-#           docker push ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
+      # ----------------------------------------------------------
+      # SONARQUBE CONNECTIVITY
+      # ----------------------------------------------------------
 
-#           docker push ${IMAGE_NAME}:latest
+      - name: Verify SonarQube Connectivity
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-#           echo "Frontend image pushed successfully."
+        run: |
 
+          echo "============================================"
+          echo "CHECKING SONARQUBE"
+          echo "============================================"
 
-#   # ============================================================
-#   # FINAL - BUILD PIPELINE SUCCESS
-#   # ============================================================
+          STATUS=$(curl --fail --silent \
+            "$SONAR_HOST_URL/api/system/status")
 
-#   pipeline-success:
-#     name: Security & Image Pipeline Completed
-#     runs-on: ubuntu-latest
+          echo "$STATUS"
 
-#     needs:
-#       - build-scan-push-backend
-#       - build-scan-push-frontend
+          echo ""
+          echo "SonarQube is reachable."
 
-#     steps:
+      # ----------------------------------------------------------
+      # SONARQUBE SCAN
+      # ----------------------------------------------------------
 
-#       - name: Pipeline Completed
-#         run: |
+      - name: Run SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v7
+        with:
+          projectBaseDir: application/backend
+          args: >
+            -Dsonar.projectKey=Hireflow-backend
+            -Dsonar.projectName="Hireflow Backend"
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/**
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-#           echo "============================================"
-#           echo "SECOPS PIPELINE COMPLETED"
-#           echo "============================================"
+      # ----------------------------------------------------------
+      # VERIFY REPORT-TASK.TXT
+      # ----------------------------------------------------------
 
-#           echo "SonarQube       : PASSED"
-#           echo "Gitleaks        : PASSED"
-#           echo "Trivy Dependency: PASSED"
-#           echo "Backend Image   : PUSHED"
-#           echo "Frontend Image  : PUSHED"
+      - name: Verify SonarQube Report
+        run: |
 
-#           echo ""
-#           echo "Images:"
-#           echo "ghcr.io/thakur-rohit-21/hireflow-backend:latest"
-#           echo "ghcr.io/thakur-rohit-21/hireflow-frontend:latest"
+          echo "============================================"
+          echo "VERIFYING SONARQUBE REPORT"
+          echo "============================================"
 
-#           echo ""
-#           echo "Deployment workflow will start automatically."
+          echo ""
+          echo "Checking:"
+          echo "application/backend/.scannerwork/"
 
+          if [ -f "application/backend/.scannerwork/report-task.txt" ]; then
 
+            echo ""
+            echo "SUCCESS: report-task.txt exists."
 
+            echo ""
+            echo "============================================"
+            echo "REPORT TASK CONTENT"
+            echo "============================================"
 
+            cat application/backend/.scannerwork/report-task.txt
+
+          else
+
+            echo ""
+            echo "ERROR: report-task.txt does not exist."
+
+            echo ""
+            echo "Searching entire workspace..."
+
+            find "${GITHUB_WORKSPACE}" \
+              -name "report-task.txt" \
+              -type f \
+              -print
+
+            echo ""
+            echo "Scanner directory contents:"
+
+            if [ -d "application/backend/.scannerwork" ]; then
+              ls -la application/backend/.scannerwork
+            else
+              echo ".scannerwork directory does not exist."
+            fi
+
+            exit 1
+          fi
+
+      # ----------------------------------------------------------
+      # SONARQUBE QUALITY GATE
+      # ----------------------------------------------------------
+
+      - name: SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        with:
+          scanMetadataReportFile: application/backend/.scannerwork/report-task.txt
+          pollingTimeoutSec: 300
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # ----------------------------------------------------------
+      # SONARQUBE SUCCESS
+      # ----------------------------------------------------------
+
+      - name: SonarQube Completed
+        run: |
+
+          echo "============================================"
+          echo "SONARQUBE QUALITY GATE PASSED"
+          echo "============================================"
+
+          echo "Project:"
+          echo "Hireflow-backend"
+
+          echo ""
+          echo "Dashboard:"
+          echo "${{ secrets.SONAR_HOST_URL }}/dashboard?id=Hireflow-backend"
+
+
+  # ============================================================
+  # STAGE 3 - TRIVY DEPENDENCY SCANNING
+  # ============================================================
+
+  trivy-deps:
+    name: Trivy - Dependency Scanning
+    runs-on: ubuntu-latest
+    needs: sonarqube-scan
+
+    steps:
+
+      - name: Display Application Information
+        run: |
+
+          echo "============================================"
+          echo "TRIVY DEPENDENCY SCANNING"
+          echo "============================================"
+
+          echo "Repository:"
+          echo "${{ github.event.client_payload.repository }}"
+
+          echo "Commit:"
+          echo "${{ github.event.client_payload.commit_sha }}"
+
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          path: application
+
+      - name: Verify Checked Out Commit
+        run: |
+          git -C application rev-parse HEAD
+
+      - name: Run Trivy Dependency Scan
+        run: |
+
+          echo "============================================"
+          echo "RUNNING TRIVY DEPENDENCY SCAN"
+          echo "============================================"
+
+          mkdir -p trivy-cache
+
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}/application:/repo" \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            aquasec/trivy:latest \
+            fs \
+            /repo \
+            --scanners vuln \
+            --severity CRITICAL,HIGH \
+            --format table \
+            --exit-code 1
+
+      - name: Generate Trivy Dependency JSON Report
+        if: always()
+        run: |
+
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}/application:/repo" \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            aquasec/trivy:latest \
+            fs \
+            /repo \
+            --scanners vuln \
+            --severity CRITICAL,HIGH \
+            --format json \
+            --output /repo/trivy-fs-report.json \
+            --exit-code 0
+
+      - name: Show Trivy Dependency Findings
+        if: always()
+        run: |
+
+          echo "============================================"
+          echo "TRIVY DEPENDENCY FINDINGS"
+          echo "============================================"
+
+          if [ -f "application/trivy-fs-report.json" ]; then
+
+            jq -r '
+              .Results[]? |
+              select(.Vulnerabilities != null) |
+              .Vulnerabilities[] |
+              "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
+            ' application/trivy-fs-report.json
+
+          else
+
+            echo "No Trivy report found."
+
+          fi
+
+      - name: Upload Trivy Dependency Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-dependency-report
+          path: application/trivy-fs-report.json
+
+
+  # ============================================================
+  # STAGE 4 - BACKEND BUILD / SCAN / PUSH
+  # ============================================================
+
+  build-scan-push-backend:
+    name: Backend - Build, Scan & Push
+    runs-on: ubuntu-latest
+    needs: trivy-deps
+
+    steps:
+
+      - name: Display Backend Build Information
+        run: |
+
+          echo "============================================"
+          echo "BACKEND BUILD"
+          echo "============================================"
+
+          echo "Commit:"
+          echo "${{ github.event.client_payload.commit_sha }}"
+
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          path: application
+
+      - name: Verify Checked Out Commit
+        run: |
+          git -C application rev-parse HEAD
+
+      - name: Build Backend Docker Image
+        run: |
+
+          echo "============================================"
+          echo "BUILDING BACKEND IMAGE"
+          echo "============================================"
+
+          docker build \
+            -t hireflow-backend:${{ github.event.client_payload.commit_sha }} \
+            -f application/backend/Dockerfile \
+            application/backend
+
+      - name: Scan Backend Docker Image
+        run: |
+
+          echo "============================================"
+          echo "SCANNING BACKEND IMAGE"
+          echo "============================================"
+
+          mkdir -p trivy-cache
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            aquasec/trivy:latest \
+            image \
+            hireflow-backend:${{ github.event.client_payload.commit_sha }} \
+            --severity CRITICAL,HIGH \
+            --format table \
+            --exit-code 1
+
+      - name: Generate Backend Trivy Report
+        if: always()
+        run: |
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            -v "${GITHUB_WORKSPACE}:/output" \
+            aquasec/trivy:latest \
+            image \
+            hireflow-backend:${{ github.event.client_payload.commit_sha }} \
+            --severity CRITICAL,HIGH \
+            --format json \
+            --output /output/trivy-backend-report.json \
+            --exit-code 0
+
+      - name: Show Backend Vulnerability Summary
+        if: always()
+        run: |
+
+          echo "============================================"
+          echo "BACKEND VULNERABILITY SUMMARY"
+          echo "============================================"
+
+          if [ -f "trivy-backend-report.json" ]; then
+
+            jq -r '
+              .Results[]? |
+              select(.Vulnerabilities != null) |
+              .Vulnerabilities[] |
+              "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
+            ' trivy-backend-report.json
+
+          else
+
+            echo "No report found."
+
+          fi
+
+      - name: Upload Backend Trivy Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-backend-image-report
+          path: trivy-backend-report.json
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag Backend Image
+        run: |
+
+          IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-backend
+
+          docker tag \
+            hireflow-backend:${{ github.event.client_payload.commit_sha }} \
+            ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
+
+          docker tag \
+            hireflow-backend:${{ github.event.client_payload.commit_sha }} \
+            ${IMAGE_NAME}:latest
+
+      - name: Push Backend Image
+        run: |
+
+          IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-backend
+
+          docker push ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
+
+          docker push ${IMAGE_NAME}:latest
+
+          echo "Backend image pushed successfully."
+
+
+  # ============================================================
+  # STAGE 5 - FRONTEND BUILD / SCAN / PUSH
+  # ============================================================
+
+  build-scan-push-frontend:
+    name: Frontend - Build, Scan & Push
+    runs-on: ubuntu-latest
+    needs: trivy-deps
+
+    steps:
+
+      - name: Display Frontend Build Information
+        run: |
+
+          echo "============================================"
+          echo "FRONTEND BUILD"
+          echo "============================================"
+
+          echo "Commit:"
+          echo "${{ github.event.client_payload.commit_sha }}"
+
+      - name: Checkout Exact Application Commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          path: application
+
+      - name: Verify Checked Out Commit
+        run: |
+          git -C application rev-parse HEAD
+
+      - name: Build Frontend Docker Image
+        run: |
+
+          echo "============================================"
+          echo "BUILDING FRONTEND IMAGE"
+          echo "============================================"
+
+          docker build \
+            -t hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
+            -f application/frontend/Dockerfile \
+            --build-arg VITE_API_URL=${{ vars.VITE_API_URL }} \
+            application/frontend
+
+      - name: Scan Frontend Docker Image
+        run: |
+
+          echo "============================================"
+          echo "SCANNING FRONTEND IMAGE"
+          echo "============================================"
+
+          mkdir -p trivy-cache
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
+            aquasec/trivy:latest \
+            image \
+            hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
+            --severity CRITICAL,HIGH \
+            --format table \
+            --exit-code 1
+
+      - name: Generate Frontend Trivy Report
+        if: always()
+        run: |
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${GITHUB_WORKSPACE}:/output" \
+            aquasec/trivy:latest \
+            image \
+            hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
+            --severity CRITICAL,HIGH \
+            --format json \
+            --output /output/trivy-frontend-report.json \
+            --exit-code 0
+
+      - name: Show Frontend Vulnerability Summary
+        if: always()
+        run: |
+
+          echo "============================================"
+          echo "FRONTEND VULNERABILITY SUMMARY"
+          echo "============================================"
+
+          if [ -f "trivy-frontend-report.json" ]; then
+
+            jq -r '
+              .Results[]? |
+              select(.Vulnerabilities != null) |
+              .Vulnerabilities[] |
+              "Package: \(.PkgName)\nInstalled: \(.InstalledVersion)\nFixed In: \(.FixedVersion // "N/A")\nSeverity: \(.Severity)\nCVE: \(.VulnerabilityID)\n---"
+            ' trivy-frontend-report.json
+
+          else
+
+            echo "No report found."
+
+          fi
+
+      - name: Upload Frontend Trivy Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-frontend-image-report
+          path: trivy-frontend-report.json
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag Frontend Image
+        run: |
+
+          IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-frontend
+
+          docker tag \
+            hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
+            ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
+
+          docker tag \
+            hireflow-frontend:${{ github.event.client_payload.commit_sha }} \
+            ${IMAGE_NAME}:latest
+
+      - name: Push Frontend Image
+        run: |
+
+          IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-frontend
+
+          docker push ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
+
+          docker push ${IMAGE_NAME}:latest
+
+          echo "Frontend image pushed successfully."
+
+
+  # ============================================================
+  # FINAL - BUILD PIPELINE SUCCESS
+  # ============================================================
+
+  pipeline-success:
+    name: Security & Image Pipeline Completed
+    runs-on: ubuntu-latest
+
+    needs:
+      - build-scan-push-backend
+      - build-scan-push-frontend
+
+    steps:
+
+      - name: Pipeline Completed
+        run: |
+
+          echo "============================================"
+          echo "SECOPS PIPELINE COMPLETED"
+          echo "============================================"
+
+          echo "Gitleaks        : PASSED"
+          echo "SonarQube       : PASSED"
+          echo "Trivy Dependency: PASSED"
+          echo "Backend Image   : PUSHED"
+          echo "Frontend Image  : PUSHED"
+
+          echo ""
+          echo "Images:"
+          echo "ghcr.io/thakur-rohit-21/hireflow-backend:latest"
+          echo "ghcr.io/thakur-rohit-21/hireflow-frontend:latest"
+
+          echo ""
+          echo "Deployment workflow will start automatically."
