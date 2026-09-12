@@ -223,7 +223,8 @@ jobs:
           echo "============================================"
           echo "SONARQUBE QUALITY GATE PASSED"
           echo "============================================"
-
+          
+          echo "Project: Hireflow-backend"
           echo "Dashboard:"
           echo "${{ secrets.SONAR_HOST_URL }}/dashboard?id=Hireflow-backend"
 
