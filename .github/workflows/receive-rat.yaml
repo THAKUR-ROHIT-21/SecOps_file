@@ -20,6 +20,12 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      - name: SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_UR }}
 
       - name: Display Application Information
         run: |
@@ -619,3 +625,7 @@ jobs:
 
           echo ""
           echo "Deployment workflow will start automatically."
+
+
+
+
