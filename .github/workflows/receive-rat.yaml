@@ -9,13 +9,11 @@ permissions:
   contents: read
   packages: write
 
-
-# ============================================================
-# STAGE 1 - GITLEAKS
-# ============================================================
-
 jobs:
 
+  # ============================================================
+  # 1. GITLEAKS - SECRET SCANNING
+  # ============================================================
   gitleaks:
     name: Gitleaks - Secret Scanning
     runs-on: ubuntu-latest
@@ -47,14 +45,13 @@ jobs:
       - name: Verify Checked Out Commit
         run: |
           echo "============================================"
-          echo "VERIFYING COMMIT"
+          echo "CHECKED OUT COMMIT"
           echo "============================================"
 
           git -C application rev-parse HEAD
 
       - name: Scan Application for Secrets
         run: |
-
           echo "============================================"
           echo "RUNNING GITLEAKS"
           echo "============================================"
@@ -73,7 +70,6 @@ jobs:
       - name: Show Gitleaks Findings
         if: always()
         run: |
-
           echo "============================================"
           echo "GITLEAKS FINDINGS"
           echo "============================================"
@@ -88,15 +84,11 @@ jobs:
               ' application/gitleaks-report.json
 
             else
-
               echo "No secrets detected."
-
             fi
 
           else
-
             echo "No Gitleaks report generated."
-
           fi
 
       - name: List Scanned Files
@@ -108,20 +100,20 @@ jobs:
           find application -type f -print
 
 
-# ============================================================
-# STAGE 2 - SONARQUBE
-# ============================================================
-
+  # ============================================================
+  # 2. SONARQUBE - CODE QUALITY + QUALITY GATE
+  # ============================================================
   sonarqube-scan:
-    name: SonarQube - Code Quality Analysis
+    name: SonarQube - Code Quality & Quality Gate
     runs-on: self-hosted
-    needs: gitleaks
+
+    needs:
+      - gitleaks
 
     steps:
 
       - name: Display Application Information
         run: |
-
           echo "============================================"
           echo "SONARQUBE CODE QUALITY ANALYSIS"
           echo "============================================"
@@ -141,19 +133,25 @@ jobs:
           repository: ${{ github.event.client_payload.repository }}
           ref: ${{ github.event.client_payload.commit_sha }}
           path: application
+          fetch-depth: 0
 
       - name: Verify Application Commit
         run: |
-
           echo "============================================"
           echo "CHECKED OUT COMMIT"
           echo "============================================"
 
-          git -C application rev-parse HEAD
+          ACTUAL_COMMIT=$(git -C application rev-parse HEAD)
+
+          echo "Actual Commit:"
+          echo "$ACTUAL_COMMIT"
+
+          echo ""
+          echo "Expected Commit:"
+          echo "${{ github.event.client_payload.commit_sha }}"
 
       - name: Verify Backend Source
         run: |
-
           echo "============================================"
           echo "VERIFYING BACKEND SOURCE"
           echo "============================================"
@@ -165,53 +163,66 @@ jobs:
 
           echo "Backend source found."
 
+          echo ""
+          echo "Backend files:"
+          find application/backend -maxdepth 2 -type f | head -50
+
+      - name: Verify Node.js
+        run: |
+          echo "============================================"
+          echo "NODE.JS VERSION"
+          echo "============================================"
+
+          node --version || true
+          npm --version || true
+
       - name: Verify SonarQube Connectivity
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
         run: |
-
           echo "============================================"
           echo "CHECKING SONARQUBE"
           echo "============================================"
+
+          echo "SonarQube URL:"
+          echo "$SONAR_HOST_URL"
+
+          echo ""
 
           curl --fail --silent \
             "$SONAR_HOST_URL/api/system/status"
 
           echo ""
+          echo ""
           echo "SonarQube is reachable."
 
-      - name: Run SonarQube Scanner
-        env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
+      - name: Clean Previous Sonar Files
         run: |
-
           echo "============================================"
-          echo "RUNNING SONARQUBE SCAN"
+          echo "CLEANING PREVIOUS SONAR FILES"
           echo "============================================"
 
-          docker pull sonarsource/sonar-scanner-cli:latest
+          rm -rf application/backend/.scannerwork
 
-          docker run --rm \
-            --network host \
-            -v "${GITHUB_WORKSPACE}/application/backend:/usr/src" \
-            sonarsource/sonar-scanner-cli:latest \
-            -Dsonar.projectKey=Hireflow-backend \
-            -Dsonar.projectName="Hireflow Backend" \
-            -Dsonar.sources=/usr/src \
-            -Dsonar.host.url="$SONAR_HOST_URL" \
-            -Dsonar.token="$SONAR_TOKEN" \
-            -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
+          echo "Previous .scannerwork directory removed."
 
-      - name: SonarQube Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
+      - name: Run SonarQube Scan + Quality Gate
+        uses: SonarSource/sonarqube-scan-action@v8.2.1
 
         with:
-          scanMetadataReportFile: application/backend/.scannerwork/report-task.txt
-          pollingTimeoutSec: 300
+          projectBaseDir: application/backend
+
+          skipSignatureVerification: true
+
+          args: >
+            -Dsonar.projectKey=Hireflow-backend
+            "-Dsonar.projectName=Hireflow Backend"
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/coverage/**
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+            -Dsonar.verbose=true
 
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -219,30 +230,37 @@ jobs:
 
       - name: SonarQube Completed
         run: |
-
           echo "============================================"
           echo "SONARQUBE QUALITY GATE PASSED"
           echo "============================================"
-          
-          echo "Project: Hireflow-backend"
+
+          echo "Project:"
+          echo "Hireflow-backend"
+
+          echo ""
           echo "Dashboard:"
           echo "${{ secrets.SONAR_HOST_URL }}/dashboard?id=Hireflow-backend"
 
+          echo ""
+          echo "============================================"
+          echo "SONARQUBE PASSED SUCCESSFULLY"
+          echo "============================================"
 
-# ============================================================
-# STAGE 3 - TRIVY DEPENDENCY SCANNING
-# ============================================================
 
+  # ============================================================
+  # 3. TRIVY - DEPENDENCY SCANNING
+  # ============================================================
   trivy-deps:
     name: Trivy - Dependency Scanning
     runs-on: ubuntu-latest
-    needs: sonarqube-scan
+
+    needs:
+      - sonarqube-scan
 
     steps:
 
       - name: Display Application Information
         run: |
-
           echo "============================================"
           echo "TRIVY DEPENDENCY SCANNING"
           echo "============================================"
@@ -262,13 +280,10 @@ jobs:
 
       - name: Verify Checked Out Commit
         run: |
-
-          echo "Application Commit:"
           git -C application rev-parse HEAD
 
       - name: Run Trivy Dependency Scan
         run: |
-
           echo "============================================"
           echo "RUNNING TRIVY DEPENDENCY SCAN"
           echo "============================================"
@@ -289,7 +304,6 @@ jobs:
       - name: Generate Trivy Dependency JSON Report
         if: always()
         run: |
-
           docker run --rm \
             -v "${GITHUB_WORKSPACE}/application:/repo" \
             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
@@ -305,7 +319,6 @@ jobs:
       - name: Show Trivy Dependency Findings
         if: always()
         run: |
-
           echo "============================================"
           echo "TRIVY DEPENDENCY FINDINGS"
           echo "============================================"
@@ -320,9 +333,7 @@ jobs:
             ' application/trivy-fs-report.json
 
           else
-
             echo "No Trivy report found."
-
           fi
 
       - name: Upload Trivy Dependency Report
@@ -333,20 +344,20 @@ jobs:
           path: application/trivy-fs-report.json
 
 
-# ============================================================
-# STAGE 4 - BACKEND BUILD / SCAN / PUSH
-# ============================================================
-
+  # ============================================================
+  # 4. BACKEND - BUILD + TRIVY + GHCR
+  # ============================================================
   build-scan-push-backend:
     name: Backend - Build, Scan & Push
     runs-on: ubuntu-latest
-    needs: trivy-deps
+
+    needs:
+      - trivy-deps
 
     steps:
 
       - name: Display Backend Build Information
         run: |
-
           echo "============================================"
           echo "BACKEND BUILD"
           echo "============================================"
@@ -363,12 +374,10 @@ jobs:
 
       - name: Verify Checked Out Commit
         run: |
-
           git -C application rev-parse HEAD
 
       - name: Build Backend Docker Image
         run: |
-
           echo "============================================"
           echo "BUILDING BACKEND IMAGE"
           echo "============================================"
@@ -380,7 +389,6 @@ jobs:
 
       - name: Scan Backend Docker Image
         run: |
-
           echo "============================================"
           echo "SCANNING BACKEND IMAGE"
           echo "============================================"
@@ -400,7 +408,6 @@ jobs:
       - name: Generate Backend Trivy Report
         if: always()
         run: |
-
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${GITHUB_WORKSPACE}/trivy-cache:/root/.cache/" \
@@ -416,7 +423,6 @@ jobs:
       - name: Show Backend Vulnerability Summary
         if: always()
         run: |
-
           echo "============================================"
           echo "BACKEND VULNERABILITY SUMMARY"
           echo "============================================"
@@ -431,9 +437,7 @@ jobs:
             ' trivy-backend-report.json
 
           else
-
             echo "No report found."
-
           fi
 
       - name: Upload Backend Trivy Report
@@ -452,7 +456,6 @@ jobs:
 
       - name: Tag Backend Image
         run: |
-
           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-backend
 
           docker tag \
@@ -465,7 +468,6 @@ jobs:
 
       - name: Push Backend Image
         run: |
-
           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-backend
 
           docker push ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
@@ -475,20 +477,20 @@ jobs:
           echo "Backend image pushed successfully."
 
 
-# ============================================================
-# STAGE 5 - FRONTEND BUILD / SCAN / PUSH
-# ============================================================
-
+  # ============================================================
+  # 5. FRONTEND - BUILD + TRIVY + GHCR
+  # ============================================================
   build-scan-push-frontend:
     name: Frontend - Build, Scan & Push
     runs-on: ubuntu-latest
-    needs: trivy-deps
+
+    needs:
+      - trivy-deps
 
     steps:
 
       - name: Display Frontend Build Information
         run: |
-
           echo "============================================"
           echo "FRONTEND BUILD"
           echo "============================================"
@@ -505,12 +507,10 @@ jobs:
 
       - name: Verify Checked Out Commit
         run: |
-
           git -C application rev-parse HEAD
 
       - name: Build Frontend Docker Image
         run: |
-
           echo "============================================"
           echo "BUILDING FRONTEND IMAGE"
           echo "============================================"
@@ -523,7 +523,6 @@ jobs:
 
       - name: Scan Frontend Docker Image
         run: |
-
           echo "============================================"
           echo "SCANNING FRONTEND IMAGE"
           echo "============================================"
@@ -543,7 +542,6 @@ jobs:
       - name: Generate Frontend Trivy Report
         if: always()
         run: |
-
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${GITHUB_WORKSPACE}:/output" \
@@ -558,7 +556,6 @@ jobs:
       - name: Show Frontend Vulnerability Summary
         if: always()
         run: |
-
           echo "============================================"
           echo "FRONTEND VULNERABILITY SUMMARY"
           echo "============================================"
@@ -573,9 +570,7 @@ jobs:
             ' trivy-frontend-report.json
 
           else
-
             echo "No report found."
-
           fi
 
       - name: Upload Frontend Trivy Report
@@ -594,7 +589,6 @@ jobs:
 
       - name: Tag Frontend Image
         run: |
-
           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-frontend
 
           docker tag \
@@ -607,7 +601,6 @@ jobs:
 
       - name: Push Frontend Image
         run: |
-
           IMAGE_NAME=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/hireflow-frontend
 
           docker push ${IMAGE_NAME}:${{ github.event.client_payload.commit_sha }}
@@ -617,10 +610,9 @@ jobs:
           echo "Frontend image pushed successfully."
 
 
-# ============================================================
-# FINAL - PIPELINE SUCCESS
-# ============================================================
-
+  # ============================================================
+  # 6. PIPELINE SUCCESS
+  # ============================================================
   pipeline-success:
     name: Security & Image Pipeline Completed
     runs-on: ubuntu-latest
@@ -638,16 +630,25 @@ jobs:
           echo "SECOPS PIPELINE COMPLETED"
           echo "============================================"
 
-          echo "Gitleaks        : PASSED"
-          echo "SonarQube       : PASSED"
-          echo "Trivy Dependency: PASSED"
-          echo "Backend Image   : PUSHED"
-          echo "Frontend Image  : PUSHED"
+          echo ""
+          echo "Gitleaks         : PASSED"
+          echo "SonarQube        : PASSED"
+          echo "Quality Gate     : PASSED"
+          echo "Trivy Dependency : PASSED"
+          echo "Backend Image    : PUSHED"
+          echo "Frontend Image   : PUSHED"
 
           echo ""
-          echo "Images:"
+          echo "============================================"
+          echo "DOCKER IMAGES"
+          echo "============================================"
+
           echo "ghcr.io/thakur-rohit-21/hireflow-backend:latest"
           echo "ghcr.io/thakur-rohit-21/hireflow-frontend:latest"
 
           echo ""
+          echo "============================================"
+          echo "PIPELINE SUCCESS"
+          echo "============================================"
+
           echo "Deployment workflow will start automatically."
